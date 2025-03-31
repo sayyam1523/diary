@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital Diary</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+    input, textarea, button { width: 100%; margin: 10px 0; padding: 8px; }
+    #entries { margin-top: 20px; }
+    .entry { border-bottom: 1px solid #ccc; padding: 10px 0; }
+    .notification-settings { 
+      background-color: #f9f9f9; 
+      padding: 15px; 
+      border-radius: 5px;
+      margin: 20px 0;
+      display: none;
+    }
+    .settings-toggle {
+      color: blue;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    @media (max-width: 600px) { body { padding: 10px; } }
+  </style>
+</head>
+<body>
+  <h1>Digital Diary</h1>
+  
+  <input type="password" id="passcode" placeholder="Enter passcode">
+  <textarea id="entry" placeholder="Write your diary entry here"></textarea>
+  <button onclick="addEntry()">Add Entry</button>
+  
+  <p class="settings-toggle" onclick="toggleSettings()">Show notification settings</p>
+  
+  <div class="notification-settings" id="settingsPanel">
+    <h3>Email Notification Settings</h3>
+    <input type="email" id="notifyEmail" placeholder="Email to receive notifications">
+    <input type="text" id="notifyName" placeholder="Your name">
+    <button onclick="saveNotificationSettings()">Save Settings</button>
+  </div>
+  
+  <h2>Previous Entries</h2>
+  <div id="entries"></div>
+
+  <script>
+    const SPREADSHEET_ID = '1YFlt2BaQG1Xh7smDZyMiDydHEvkR6cbtWn5Lv4n__Vk'; // Your Spreadsheet ID
+    const API_KEY = 'AIzaSyCAv66mN41xK3MLXRBNRyu6ozlQonspsHs'; // Your API Key
+    const PASSCODE = 'secret123'; // Your passcode
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwUOYUS4cck8chuwml6YlVKjrIgVqeb-MNL0R_r5o0IilOHcREdegFa_GKjb3Lt8cT3/exec'; // Replace with your Apps Script URL
+    
+    // Load notification settings from localStorage if available
+    document.addEventListener('DOMContentLoaded', function() {
+      const email = localStorage.getItem('notifyEmail');
+      const name = localStorage.getItem('notifyName');
+      
+      if (email) document.getElementById('notifyEmail').value = email;
+      if (name) document.getElementById('notifyName').value = name;
+    });
+    
+    function toggleSettings() {
+      const panel = document.getElementById('settingsPanel');
+      const toggle = document.querySelector('.settings-toggle');
+      
+      if (panel.style.display === 'block') {
+        panel.style.display = 'none';
+        toggle.textContent = 'Show notification settings';
+      } else {
+        panel.style.display = 'block';
+        toggle.textContent = 'Hide notification settings';
+      }
+    }
+    
+    function saveNotificationSettings() {
+      const email = document.getElementById('notifyEmail').value;
+      const name = document.getElementById('notifyName').value;
+      
+      if (!email) {
+        alert('Please enter an email address');
+        return;
+      }
+      
+      // Save to localStorage
+      localStorage.setItem('notifyEmail', email);
+      localStorage.setItem('notifyName', name || 'Diary User');
+      
+      // Send to server to update settings
+      const passcode = document.getElementById('passcode').value;
+      if (passcode !== PASSCODE) {
+        alert('Please enter the correct passcode to save notification settings');
+        return;
+      }
+      
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'saveSettings',
+          passcode: passcode,
+          email: email,
+          name: name || 'Diary User'
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.result === 'success') {
+          alert('Notification settings saved!');
+          toggleSettings();
+        } else {
+          alert(data.message || 'Error saving settings');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('Error saving settings. Please try again.');
+      });
+    }
+    
+    // Load existing entries
+    loadEntries();
+    
+    function loadEntries() {
+      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Sheet1!A:B?key=${API_KEY}`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok: ' + response.statusText);
+          }
+          return response.json();
+        })
+        .then(data => {
+          const entriesDiv = document.getElementById('entries');
+          entriesDiv.innerHTML = ''; // Clear existing entries
+          
+          if (data.values && data.values.length > 1) {
+            const entries = data.values.slice(1); // Skip header row
+            entries.reverse().forEach(([date, text]) => {
+              const div = document.createElement('div');
+              div.className = 'entry';
+              div.innerHTML = `<strong>${date}</strong><p>${text}</p>`;
+              entriesDiv.appendChild(div);
+            });
+          } else {
+            entriesDiv.innerHTML = '<p>No entries yet. Be the first to write one!</p>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading entries:', error);
+          document.getElementById('entries').innerHTML = 
+            '<p>Error loading entries. Please try again later.</p>';
+        });
+    }
+
+    // Add new entry
+    function addEntry() {
+      const passcode = document.getElementById('passcode').value;
+      const entryText = document.getElementById('entry').value;
+      
+      if (passcode !== PASSCODE) {
+        alert('Wrong passcode!');
+        return;
+      }
+      
+      if (!entryText) {
+        alert('Please write an entry!');
+        return;
+      }
+
+      const date = new Date().toLocaleString();
+      const email = localStorage.getItem('notifyEmail');
+      const name = localStorage.getItem('notifyName') || 'Diary User';
+      
+      // Send to Google Apps Script
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'addEntry',
+          passcode: passcode,
+          date: date,
+          text: entryText,
+          notifyEmail: email,
+          notifyName: name
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.result === 'success') {
+          alert('Entry added!' + (email ? ' Notification email sent.' : ''));
+          document.getElementById('entry').value = '';
+          loadEntries(); // Reload entries
+        } else {
+          alert(data.message || 'Error adding entry');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding entry. Please try again.');
+      });
+    }
+  </script>
+</body>
+</html>
